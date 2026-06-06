@@ -1,0 +1,92 @@
+plugins {
+    id 'java-library'
+    id 'idea'
+    id 'net.neoforged.moddev' version '2.0.141'
+}
+
+version = mod_version
+group = mod_group_id
+
+tasks.named('jar', Jar) {
+    archiveBaseName.set('tdrss')
+    archiveVersion.set(mod_version)
+}
+
+java.toolchain.languageVersion = JavaLanguageVersion.of(21)
+
+neoForge {
+    version = project.neo_version
+    parchment {
+        mappingsVersion = project.parchment_mappings_version
+        minecraftVersion = project.parchment_minecraft_version
+    }
+    runs {
+        client { client(); systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id }
+        server { server(); systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id; programArgument '--nogui' }
+        gameTestServer { type = "gameTestServer"; systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id }
+        data { data(); programArguments.addAll '--mod', project.mod_id, '--all', '--output', file('src/generated/resources/').getAbsolutePath(), '--existing', file('src/main/resources/').getAbsolutePath() }
+        configureEach { systemProperty 'forge.logging.markers', 'REGISTRIES'; logLevel = org.slf4j.event.Level.DEBUG }
+    }
+    mods { "${mod_id}" { sourceSet sourceSets.main } }
+}
+
+sourceSets.main.resources { srcDir 'src/generated/resources' }
+
+repositories {
+    mavenLocal()
+    mavenCentral()
+    maven {
+        name = "ManasMods"
+        url = "https://nexus.nighti.dev/repository/manasmods-public/"
+    }
+    maven { url = 'https://maven.architectury.dev/' }
+    maven { url = 'https://maven.shedaniel.me/' }
+}
+
+dependencies {
+    compileOnly files('libs/tensura-neoforge-2.0.1.0.jar')
+    compileOnly "io.github.manasmods:manascore-race-neoforge:4.0.0.2"
+    compileOnly "io.github.manasmods:manascore-storage-neoforge:4.0.0.2"
+    compileOnly "io.github.manasmods:manascore-config-neoforge:4.0.0.2"
+    compileOnly "io.github.manasmods:manascore-network-neoforge:4.0.0.2"
+}
+
+//var generateModMetadata = tasks.register("generateModMetadata", ProcessResources) {
+//    var replaceProperties = [minecraft_version      : minecraft_version,
+//                             minecraft_version_range: minecraft_version_range,
+//                             neo_version            : neo_version,
+//                             neo_version_range      : neo_version_range,
+//                             loader_version_range   : loader_version_range,
+//                             mod_id                 : mod_id,
+//                             mod_name               : mod_name,
+//                             mod_license            : mod_license,
+//                             mod_version            : mod_version,
+//                             mod_authors            : mod_authors,
+//                             mod_description        : mod_description]
+//    inputs.properties replaceProperties
+//    expand replaceProperties
+//    from "src/main/templates"
+//    into "build/generated/sources/modMetadata"
+//}
+
+// Include the output of "generateModMetadata" as an input directory for the build
+// this works with both building through Gradle and the IDE.
+//sourceSets.main.resources.srcDir generateModMetadata
+// To avoid having to run "generateModMetadata" manually, make it run on every project reload
+//neoForge.ideSyncTask generateModMetadata
+
+processResources {
+    inputs.property 'mod_id', mod_id
+    inputs.property 'mod_name', mod_name
+    inputs.property 'mod_version', mod_version
+    inputs.property 'mod_authors', mod_authors
+    inputs.property 'mod_description', mod_description
+    filesMatching(['META-INF/neoforge.mods.toml', 'pack.mcmeta']) { expand inputs.properties }
+}
+
+idea {
+    module {
+        downloadSources = true
+        downloadJavadoc = true
+    }
+}
