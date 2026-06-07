@@ -26,4 +26,4 @@ jobs:
         allowUpdates: true
         generateReleaseNotes: true
         # updateOnlyUnreleased: true # Can we have production at home? Production at home:
-        tag: "v${{ steps.getversion.outputs.value }}"
+        tag: "v${{ steps.version.outputs.value }}"
