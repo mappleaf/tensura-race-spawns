@@ -1,4 +1,6 @@
-# Tensura Race Spawns
+# Tensura Race Spawn Settings
+(Tensura Race Spawns or just TRSS for short)
+
 A small addon for **Tensura Reincarnated** that lets you configure custom spawn locations for each race.
 The main idea is simple: different races can start in different dimensions, biomes, or structures. This also works with races added by other addons, as long as you know their registry id.
 
