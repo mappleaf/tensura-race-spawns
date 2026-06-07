@@ -33,3 +33,11 @@ type="required"
 versionRange="[2.0.1.0,)"
 ordering="AFTER"
 side="BOTH"
+
+
+[[dependencies.${mod_id}]]
+modId="asynclocator"
+type="optional"
+versionRange="[1.0,)"
+ordering="AFTER"
+side="BOTH"

@@ -1,8 +1,11 @@
 package com.mappleaf.tensuraracespawns;
 
+import com.mappleaf.tensuraracespawns.command.RaceSpawnCommands;
 import com.mappleaf.tensuraracespawns.config.RaceSpawnConfig;
 import com.mappleaf.tensuraracespawns.event.RespawnFallbackEvents;
+import com.mappleaf.tensuraracespawns.event.RaceResetCleanupEvents;
 import com.mappleaf.tensuraracespawns.spawn.SpawnCache;
+import com.mappleaf.tensuraracespawns.spawn.SpawnSearchLock;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.loading.FMLPaths;
@@ -20,6 +23,9 @@ public final class TensuraRaceSpawns {
         RaceSpawnConfig.init(FMLPaths.CONFIGDIR.get().resolve("tensura").resolve("race_spawns.toml"));
         NeoForge.EVENT_BUS.addListener(this::onServerStarted);
         NeoForge.EVENT_BUS.register(RespawnFallbackEvents.class);
+        NeoForge.EVENT_BUS.register(RaceResetCleanupEvents.class);
+        NeoForge.EVENT_BUS.register(SpawnSearchLock.class);
+        NeoForge.EVENT_BUS.register(RaceSpawnCommands.class);
     }
 
     private void onServerStarted(ServerStartedEvent event) {
