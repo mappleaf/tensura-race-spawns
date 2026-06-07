@@ -64,6 +64,12 @@ If all three spawn fields are empty, the player uses the normal world spawn.
 It is optional. The addon should still work without it.
 
 
+## Project building
+To build project from source you need manually put Tensura mod jar in `libs/` folder, otherwise the build will fail.
+Required version can be seen in `gradle.properties`.
+Then just run `gradlew build`.
+
+
 ## Maintenance note
 This mod was made for a specific need, and I do not currently have a strong desire to actively maintain it in long-term.
 Pull requests are welcome if someone wants to fix bugs, improve compatibility, clean up the code, or extend the config system.
