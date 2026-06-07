@@ -61,7 +61,7 @@ If all three spawn fields are empty, the player uses the normal world spawn.
 
 ## Optional dependency
 - [Async Locator Refined](https://modrinth.com/project/LUIHK4LD)
-It is optional. The addon should still work without it.
+It is optional, but highly recommended. The addon should still work without it.
 
 
 ## Project building
