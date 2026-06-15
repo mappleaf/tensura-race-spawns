@@ -4,6 +4,7 @@ import com.mappleaf.tensuraracespawns.TensuraRaceSpawns;
 import com.mappleaf.tensuraracespawns.data.AssignedSpawnData;
 import com.mappleaf.tensuraracespawns.spawn.RaceSpawnApplicator;
 import io.github.manasmods.manascore.race.api.RaceAPI;
+import io.github.manasmods.tensura.menu.ReincarnationMenu;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.LivingEntity;
@@ -32,6 +33,14 @@ public final class RaceResetCleanupEvents {
     public static void cleanupIfRaceWasCleared(ServerPlayer player) {
         Optional<ResourceLocation> appliedRaceId = AssignedSpawnData.getAppliedRaceId(player);
         if (appliedRaceId.isEmpty()) return;
+
+        // While the reincarnation menu is open, race selection is handled explicitly by
+        // ReincarnationMenuMixin after the submit button is pressed. Do not run the
+        // periodic outside-menu reconciliation here, otherwise a temporary/intermediate
+        // race state can start a spawn search while the player is only browsing the list.
+        if (player.containerMenu instanceof ReincarnationMenu) {
+            return;
+        }
 
         RaceLookupResult currentRace = getCurrentRaceId(player);
         if (!currentRace.resolved()) return;
