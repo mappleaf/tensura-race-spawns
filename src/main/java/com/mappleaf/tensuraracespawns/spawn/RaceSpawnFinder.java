@@ -9,6 +9,7 @@ import net.minecraft.core.*;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.tags.BlockTags;
 import net.minecraft.tags.TagKey;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
@@ -372,12 +373,7 @@ public final class RaceSpawnFinder {
         }
 
         CompletableFuture<Optional<LocatedSpawn>> future = located.get()
-                .handle((pair, throwable) -> player.server.submit(() -> {
-                    if (throwable != null) {
-                        TensuraRaceSpawns.LOGGER.warn("Async Locator Refined biome search failed; not running synchronous fallback because the async mod is present", throwable);
-                        return CompletableFuture.completedFuture(Optional.<LocatedSpawn>empty());
-                    }
-
+                .thenCompose(pair -> player.server.submit(() -> {
                     if (pair != null) {
                         Optional<LocatedSpawn> primary = tryBiomeCandidate(level, player.getUUID(), biomeRegistry, biomeIds, assigned, assignedData, pair.getFirst());
                         if (primary.isPresent()) return CompletableFuture.completedFuture(primary);
@@ -392,8 +388,14 @@ public final class RaceSpawnFinder {
 
                     return continueAsyncBiomeSearch(player, level, biomeRegistry, biomeIds, assigned, assignedData, retryCenters, 0, new HashSet<>());
                 }))
-                .thenCompose(java.util.function.Function.identity())
-                .thenCompose(java.util.function.Function.identity());
+                .thenCompose(futureResult -> futureResult)
+                .exceptionally(throwable -> {
+                    TensuraRaceSpawns.LOGGER.warn(
+                            "Async Locator Refined biome search failed; not running synchronous fallback because the async mod is present",
+                            throwable
+                    );
+                    return Optional.empty();
+                });
         return Optional.of(future);
     }
 
@@ -410,12 +412,7 @@ public final class RaceSpawnFinder {
         }
 
         return located.get()
-                .handle((pair, throwable) -> player.server.submit(() -> {
-                    if (throwable != null) {
-                        TensuraRaceSpawns.LOGGER.warn("Async Locator Refined biome retry failed; not running synchronous fallback because the async mod is present", throwable);
-                        return CompletableFuture.completedFuture(Optional.<LocatedSpawn>empty());
-                    }
-
+                .thenCompose(pair -> player.server.submit(() -> {
                     if (pair != null) {
                         BlockPos found = pair.getFirst();
                         long packed = ChunkPos.asLong(found.getX() >> 4, found.getZ() >> 4);
@@ -434,8 +431,14 @@ public final class RaceSpawnFinder {
 
                     return continueAsyncBiomeSearch(player, level, biomeRegistry, biomeIds, assigned, assignedData, centers, index + 1, triedBiomeColumns);
                 }))
-                .thenCompose(java.util.function.Function.identity())
-                .thenCompose(java.util.function.Function.identity());
+                .thenCompose(futureResult -> futureResult)
+                .exceptionally(throwable -> {
+                    TensuraRaceSpawns.LOGGER.warn(
+                            "Async Locator Refined biome retry failed; not running synchronous fallback because the async mod is present",
+                            throwable
+                    );
+                    return Optional.empty();
+                });
     }
 
     private static Optional<LocatedSpawn> findBiomeSpawn(ServerPlayer player, ServerLevel level, List<ResourceLocation> biomeIds, boolean assigned, AssignedSpawnData assignedData) {
@@ -530,87 +533,75 @@ public final class RaceSpawnFinder {
         int minY = level.getMinBuildHeight();
         int maxFeetY = level.getMaxBuildHeight() - 2; // feet + head must both be inside build height
 
-        // Heightmap is still useful as a fast path, but it must not be trusted as the only source of
-        // surface height. Worldgen mods such as Tectonic may change the vertical build range or terrain
-        // after vanilla-like heightmap assumptions stop being reliable for our locate result.
+        LinkedHashSet<BlockPos> surfaceFeetCandidates = new LinkedHashSet<>();
+
         BlockPos heightmapFeet = level.getHeightmapPos(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, column);
-        Optional<BlockPos> accepted = tryHeightmapWindow(level, x, z, heightmapFeet, minY, maxFeetY, extraCheck);
-        if (accepted.isPresent()) {
-            BlockPos feet = accepted.get();
-            TensuraRaceSpawns.LOGGER.debug(
-                    "Accepted spawn column x={} z={} by heightmap window heightmapFeetY={} finalFeetY={}",
-                    x,
-                    z,
-                    heightmapFeet.getY(),
-                    feet.getY()
-            );
-            level.getChunkSource().addRegionTicket(TicketType.START, new ChunkPos(feet), 11, Unit.INSTANCE);
-            return accepted;
+        if (heightmapFeet.getY() >= minY && heightmapFeet.getY() <= maxFeetY + 1) {
+            surfaceFeetCandidates.add(heightmapFeet);
         }
 
-        accepted = scanColumnForSurfaceSpawn(level, x, z, minY, maxFeetY, extraCheck);
-        if (accepted.isPresent()) {
-            BlockPos feet = accepted.get();
-            TensuraRaceSpawns.LOGGER.debug(
-                    "Accepted spawn column x={} z={} by top-down column scan heightmapFeetY={} finalFeetY={}",
-                    x,
-                    z,
-                    heightmapFeet.getY(),
-                    feet.getY()
-            );
-            level.getChunkSource().addRegionTicket(TicketType.START, new ChunkPos(feet), 11, Unit.INSTANCE);
-            return accepted;
+        manualTopSurfaceFeet(level, x, z, minY, maxFeetY).ifPresent(surfaceFeetCandidates::add);
+
+        for (BlockPos surfaceFeet : surfaceFeetCandidates) {
+            Optional<BlockPos> accepted = trySurfaceWindow(level, surfaceFeet, minY, maxFeetY, extraCheck);
+            if (accepted.isPresent()) {
+                BlockPos feet = accepted.get();
+                TensuraRaceSpawns.LOGGER.debug(
+                        "Accepted top-surface spawn column x={} z={} heightmapFeetY={} surfaceFeetY={} finalFeetY={}",
+                        x,
+                        z,
+                        heightmapFeet.getY(),
+                        surfaceFeet.getY(),
+                        feet.getY()
+                );
+                level.getChunkSource().addRegionTicket(TicketType.START, new ChunkPos(feet), 11, Unit.INSTANCE);
+                return accepted;
+            }
         }
 
         TensuraRaceSpawns.LOGGER.debug(
-                "Rejected spawn column x={} z={} heightmapFeetY={} minY={} maxFeetY={}: no valid feet position found by heightmap window or top-down scan",
+                "Rejected top-surface spawn column x={} z={} heightmapFeetY={} candidates={}: no valid spawn space near external surface",
                 x,
                 z,
                 heightmapFeet.getY(),
-                minY,
-                maxFeetY
+                surfaceFeetCandidates
         );
         return Optional.empty();
     }
 
-    private static Optional<BlockPos> tryHeightmapWindow(ServerLevel level, int x, int z, BlockPos heightmapFeet, int minY, int maxFeetY, Predicate<BlockPos> extraCheck) {
-        if (heightmapFeet.getY() < minY || heightmapFeet.getY() > maxFeetY + 1) return Optional.empty();
+    private static Optional<BlockPos> manualTopSurfaceFeet(ServerLevel level, int x, int z, int minY, int maxFeetY) {
+        for (int y = maxFeetY - 1; y >= minY; y--) {
+            BlockPos blockPos = new BlockPos(x, y, z);
+            BlockState state = level.getBlockState(blockPos);
 
-        BlockPos surfaceBlock = heightmapFeet.below();
-        for (int dy = 1; dy >= -7; dy--) {
-            BlockPos feet = new BlockPos(x, surfaceBlock.getY() + dy, z);
-            Optional<BlockPos> accepted = trySpawnFeet(level, feet, minY, maxFeetY, extraCheck);
-            if (accepted.isPresent()) return accepted;
-        }
+            if (state.isAir()) continue;
+            if (state.is(BlockTags.LEAVES)) continue;
+            if (!state.getFluidState().isEmpty()) continue;
+            if (state.getCollisionShape(level, blockPos).isEmpty()) continue;
 
-        for (int dy = 1; dy >= -3; dy--) {
-            BlockPos feet = new BlockPos(x, heightmapFeet.getY() + dy, z);
-            Optional<BlockPos> accepted = trySpawnFeet(level, feet, minY, maxFeetY, extraCheck);
-            if (accepted.isPresent()) return accepted;
-        }
-
-        return Optional.empty();
-    }
-
-    private static Optional<BlockPos> scanColumnForSurfaceSpawn(ServerLevel level, int x, int z, int minY, int maxFeetY, Predicate<BlockPos> extraCheck) {
-        for (int y = maxFeetY; y > minY; y--) {
-            BlockPos feet = new BlockPos(x, y, z);
-            Optional<BlockPos> accepted = trySpawnFeet(level, feet, minY, maxFeetY, extraCheck);
-            if (accepted.isPresent()) return accepted;
+            return Optional.of(blockPos.above());
         }
         return Optional.empty();
     }
 
-    private static Optional<BlockPos> trySpawnFeet(ServerLevel level, BlockPos feet, int minY, int maxFeetY, Predicate<BlockPos> extraCheck) {
-        if (feet.getY() <= minY || feet.getY() > maxFeetY) return Optional.empty();
-        if (!level.getWorldBorder().isWithinBounds(feet)) return Optional.empty();
+    private static Optional<BlockPos> trySurfaceWindow(ServerLevel level, BlockPos surfaceFeet, int minY, int maxFeetY, Predicate<BlockPos> extraCheck) {
+        BlockPos surfaceBlock = surfaceFeet.below();
 
-        if (!hasVanillaLikeSpawnSpace(level, feet)) return Optional.empty();
-        if (!extraCheck.test(feet)) return Optional.empty();
+        // Keep the window intentionally shallow. A deeper/full-column scan can accept cave floors
+        // under the located biome instead of the external surface spawn users expect.
+        for (int dy = 2; dy >= -4; dy--) {
+            BlockPos feet = new BlockPos(surfaceFeet.getX(), surfaceBlock.getY() + dy, surfaceFeet.getZ());
 
-        return Optional.of(feet);
+            if (feet.getY() < minY || feet.getY() > maxFeetY) continue;
+            if (!level.getWorldBorder().isWithinBounds(feet)) continue;
+            if (!extraCheck.test(feet)) continue;
+            if (!hasVanillaLikeSpawnSpace(level, feet)) continue;
+
+            return Optional.of(feet);
+        }
+
+        return Optional.empty();
     }
-
 
     private static boolean matchesConfiguredSurfaceBiome(ServerLevel level, Registry<Biome> biomeRegistry, BlockPos pos, List<ResourceLocation> biomeIds) {
         if (biomeIds.isEmpty()) return true;
